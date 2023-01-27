@@ -26,11 +26,14 @@ int DirCheck(const char *path);
 void shiftfile(FILE*, int);
 void cat(char[]);
 void removestr(char[], long long, long long, long long, char);
+void copystr(char[], long long, long long, long long, char, int);
+int checkpos(char[], long long, long long, long long*);
+void pastestr(char[], long long, long long);
 
 //              //              //
 int main(){
     mkdir("root");
-    mkdir("root\\.hidden");
+    mkdir("root\\.hidden$func");
     while(1){
         char line[LINE_SIZE];
         gets(line);
@@ -70,9 +73,11 @@ int main(){
             long long *col = (long long*)malloc(sizeof(long long));
             ptr = findpos(ptr, line, col);
             if(ptr==NULL){
+                free(line); free(col);
                 continue;
             }
             insert(filename, text, *line, *col);
+            free(line); free(col);
             continue;
         }
 
@@ -85,9 +90,30 @@ int main(){
             cat(filename);
         }
 
-        else if(!strcmp(order, "removestr")){
+        else if(!strcmp(order, "removestr") || !strcmp(order, "copystr") || !strcmp(order, "cutstr")){
             char filename[MAX];
-            char *ptr = findfilename(line+10, filename);
+            int w;
+            if(!strcmp(order, "removestr")){
+                w=0;
+            }
+            else if(!strcmp(order, "copystr")){
+                w=1;
+            }
+            else if(!strcmp(order, "cutstr")){
+                w=2;
+            }
+            char* ptr;
+            switch(w){
+                case 0:
+                    ptr = findfilename(line+10, filename);
+                    break;
+                case 1:
+                    ptr = findfilename(line+8, filename);
+                    break;
+                case 2:
+                    ptr = findfilename(line+7, filename);
+                    break;
+            }
             if(ptr==NULL){
                 continue;
             }
@@ -95,26 +121,65 @@ int main(){
             long long *col = (long long *)malloc(sizeof(long long));
             long long *size = (long long *)malloc(sizeof(long long));
             ptr = findpos(ptr, line, col);
+            if(ptr==NULL){
+                free(line); free(col); free(size);
+                continue;
+            }
             ptr = findsize(ptr, size);
+            if(ptr==NULL){
+                free(line); free(col); free(size);
+                continue;
+            }
             char flag[3];
             flag[0]=ptr[0];
             flag[1]=ptr[1];
             flag[2]='\0';
             if((flag[1]!='f' && flag[1]!='b') || flag[0]!='-'){
-                printf("Invalid command! use -f or -b at the end.\n");
+                free(line); free(col); free(size);
+                printf("invalid command! use -f or -b at the end.\n");
                 continue;
             }
-            removestr(filename, *line, *col, *size, flag[1]);
+            switch(w){
+                case 0:
+                    removestr(filename, *line, *col, *size, flag[1]);
+                    break;
+                case 1:
+                    copystr(filename, *line, *col, *size, flag[1], 0);
+                    break;
+                case 2:
+                    copystr(filename, *line, *col, *size, flag[1], 1);
+                    break;
+            }
+            free(line); free(col); free(size);
+            continue;
+        }
+
+        else if(!strcmp(order, "pastestr")){
+            char* ptr = line+9;
+            char filename[MAX];
+            ptr = findfilename(ptr, filename);
+            if(ptr==NULL){
+                continue;
+            }
+            long long *line = (long long*)malloc(sizeof(long long));
+            long long *col = (long long*)malloc(sizeof(long long));
+            ptr = findpos(ptr, line, col);
+            if(ptr==NULL){
+                free(line); free(col);
+                continue;
+            }
+            pastestr(filename, *line, *col);
+            free(line); free(col);
+            continue;
         }
 
         else{
-            printf("Invalid command\n");
+            printf("invalid command\n");
             continue;
         }
     }
     return 0;
 }
-
 
 //              //              //
 void createfile(char name[]){
@@ -128,7 +193,7 @@ void createfile(char name[]){
         char file[strlen(name)];
         p = strrchr(cpy, '\\');
         if(p==NULL || p==name){
-            printf("Invalid address.\n");
+            printf("invalid address.\n");
             chdir(my_add);
             return;
         }
@@ -149,10 +214,10 @@ void createfile(char name[]){
         if(!f){
           FILE* fil = fopen(file, "w");
           fclose(fil);
-          printf("Operation is done successfully.\n");
+          printf("operation done successfully.\n");
         }
         else{
-          printf("File already exist\n");
+          printf("file already exist\n");
           fclose(f);
         }
     }
@@ -161,7 +226,7 @@ void createfile(char name[]){
 
 char* findfilename(char *text, char *hold){
     if(strncmp(text, "--file ", 7)){
-        printf("Invalid command. use --file.\n");
+        printf("invalid command. use --file.\n");
         return NULL;
     }
     text+=7;
@@ -188,7 +253,7 @@ char* findfilename(char *text, char *hold){
     int i = s-text;
     hold[i] = '\0';
     if(hold[0]!='\\'){
-        printf("Invalid file address. use \\ at the begining of address.\n");
+        printf("invalid file address. use \\ at the begining of address.\n");
         return NULL;
     }
     return s+1;
@@ -196,7 +261,7 @@ char* findfilename(char *text, char *hold){
 
 char* findtext(char *text, char *hold){
     if(strncmp(text, "--str ", 6)){
-        printf("Invalid command. use --str.\n");
+        printf("invalid command. use --str.\n");
         return NULL;
     }
     text+=6;
@@ -209,9 +274,9 @@ char* findtext(char *text, char *hold){
             s++;
             s = strchr(s, '"');
         }
-        int i = s-text;
+        long long i = s-text;
         *(hold+i) = '\0';
-        for(int i=0; hold[i+1]!='\0'; i++){
+        for(long long i=0; hold[i+1]!='\0'; i++){
             hold[i]=hold[i+1];
             hold[i+1]='\0';
         }
@@ -220,7 +285,7 @@ char* findtext(char *text, char *hold){
     while(*s!=' ' && *s!='\0'){
         s++;
     }
-    int i = s-text;
+    long long i = s-text;
     hold[i] = '\0';
     return s+1;
 }
@@ -248,7 +313,7 @@ char* findpos(char *text, long long *line, long long *col){
     char cline[strlen(text)];
     char ccol[strlen(text)];
     if(strncmp(text, "--pos ", 6)){
-        printf("Invalid command. use --pos.\n");
+        printf("invalid command. use --pos.\n");
         return NULL;
     }
     text+=6;
@@ -265,7 +330,7 @@ char* findpos(char *text, long long *line, long long *col){
     (*line) = strtolli(cline);
     (*col) = strtolli(ccol);
     if(*line<1 || *col<0){
-        printf("Invalid line or column number.\n");
+        printf("invalid line or column number.\n");
         return NULL;
     }
     return text;
@@ -289,7 +354,7 @@ void insert(char name[], char text[], long long line, long long col){
     }
     name++;
     FILE *f = fopen(name, "r+");
-    int count=1;
+    long long count=1;
     char tmp;
     while((tmp=getc(f))!=EOF){
         if(tmp=='\n'){
@@ -298,21 +363,21 @@ void insert(char name[], char text[], long long line, long long col){
     }
     fseek(f, 0, SEEK_SET);
     if(line>count){
-        printf("Such position doesn't exist in file!\n");
+        printf("such position doesn't exist in file!\n");
         return;
     }
-    for(int i=0; i<line-1; i++){
+    for(long long i=0; i<line-1; i++){
         while(getc(f)!='\n'){
         }
     }
-    for(int i=0; i<col; i++){
+    for(long long i=0; i<col; i++){
         tmp = getc(f);
         if(tmp=='\n'){
-            printf("Such position doesn't exist in file!\n");
+            printf("such position doesn't exist in file!\n");
             return;
         }
     }
-    for(int i=0; text[i]!='\0'; i++){
+    for(long long i=0; text[i]!='\0'; i++){
         if(text[i]=='\\' && text[i+1]!='\0'){
             if(text[i+1]=='"'){
                 insertn(f, ftell(f), '"');
@@ -336,7 +401,7 @@ void insert(char name[], char text[], long long line, long long col){
         }
     }
     fclose(f);
-    printf("Operation is done successfully.\n");
+    printf("operation done successfully.\n");
 }
 
 void insertn(FILE* f, long p, char c){
@@ -349,14 +414,14 @@ void insertn(FILE* f, long p, char c){
 }
 
 void shiftfile(FILE* f, int n){
-    FILE *g = fopen("root\\.hidden\\$func_shift.txt", "w");
-    int w = ftell(f);
+    FILE *g = fopen("root\\.hidden$func\\$func_shift.txt", "w");
+    long long w = ftell(f);
     char a;
     while((a=getc(f))!=EOF){
         putc(a, g);
     }
     fclose(g);
-    FILE *h = fopen("root\\.hidden\\$func_shift.txt", "r");
+    FILE *h = fopen("root\\.hidden$func\\$func_shift.txt", "r");
     fseek(f, w, SEEK_SET);
     for(int i=0; i<n; i++){
         putc(' ', f);
@@ -417,7 +482,7 @@ void cat(char name[]){
     name++;
     FILE *f = fopen(name, "r+");
     char a;
-    printf("Here is the file content:\n");
+    printf("here is the file content:\n");
     printf("----------------------------\n");
     while((a=getc(f))!=EOF){
         printf("%c", a);
@@ -427,7 +492,7 @@ void cat(char name[]){
 
 char* findsize(char *ptr, long long *size){
     if(strncmp(ptr, "--size ", 7)){
-        printf("Invalid command. use --size.\n");
+        printf("invalid command. use --size.\n");
         return NULL;
     }
     ptr+=7;
@@ -441,14 +506,9 @@ char* findsize(char *ptr, long long *size){
     return ptr;
 }
 
-void removestr(char name[], long long line, long long col, long long size, char flag){
-    if(!addcheck(name)){
-        printf("such file doesn't exist!\n");
-        return;
-    }
-    name++;
+int checkpos(char name[], long long line, long long col, long long *ppos){
     FILE *f = fopen(name, "r+");
-    int count=1;
+    long long count=1;
     char tmp;
     while((tmp=getc(f))!=EOF){
         if(tmp=='\n'){
@@ -457,31 +517,47 @@ void removestr(char name[], long long line, long long col, long long size, char 
     }
     fseek(f, 0, SEEK_SET);
     if(line>count){
-        printf("Such position doesn't exist in file!\n");
-        return;
+        return 1;
     }
-    for(int i=0; i<line-1; i++){
+    for(long long i=0; i<line-1; i++){
         while(getc(f)!='\n'){
         }
     }
-    for(int i=0; i<col; i++){
+    for(long long i=0; i<col; i++){
         tmp = getc(f);
         if(tmp=='\n'){
-            printf("Such position doesn't exist in file!\n");
-            return;
+            return 1;
         }
     }
-    int pos = ftell(f);
+    *ppos = ftell(f);
+    fclose(f);
+    return 0;
+}
+
+void removestr(char name[], long long line, long long col, long long size, char flag){
+    if(!addcheck(name)){
+        printf("such file doesn't exist!\n");
+        return;
+    }
+    name++;
+    long long *ppos = (long long*)malloc(sizeof(long long));
+    if(checkpos(name, line, col, ppos)){
+        printf("such position doesn't exist in file!\n");
+        return;
+    }
+    FILE *f = fopen(name, "r+");
+    long long pos = *ppos;
+    free(ppos);
     fseek(f, 0, SEEK_END);
-    int e = ftell(f);
+    long long e = ftell(f);
     fseek(f, pos, SEEK_SET);
-    FILE *g = fopen("root\\.hidden\\$func_remove.txt", "w");
+    FILE *g = fopen("root\\.hidden$func\\$func_remove.txt", "w");
     if(flag=='b'){
-        int beg;
+        long long beg;
         char tmp;
-        for(int i=0; i<size; i++){
+        for(long long i=0; i<size; i++){
             if(ftell(f)==0){
-                printf("there aren't enough charachters to remove!\n");
+                printf("there aren't enough charachters! decrease size or change position.\n");
                 return;
             }
             fseek(f, -1, SEEK_CUR);
@@ -505,19 +581,19 @@ void removestr(char name[], long long line, long long col, long long size, char 
         fclose(g);
         fclose(f);
         FILE *f2 = fopen(name, "w");
-        FILE *g2 = fopen("root\\.hidden\\$func_remove.txt", "r");
+        FILE *g2 = fopen("root\\.hidden$func\\$func_remove.txt", "r");
         while((tmp=getc(g2))!=EOF){
             putc(tmp, f);
         }
         fclose(g2);
         fclose(f2);
     }
-    else if(flag=='f'){
-        int beg = pos;
+    else{
+        long long beg = pos;
         char tmp;
-        for(int i=0; i<size; i++){
+        for(long long i=0; i<size; i++){
             if(ftell(f)==e){
-                printf("there aren't enough charachters to remove!\n");
+                printf("there aren't enough charachters! decrease size or change position.\n");
                 return;
             }
             tmp = getc(f);
@@ -525,7 +601,7 @@ void removestr(char name[], long long line, long long col, long long size, char 
                 fseek(f, 1, SEEK_CUR);
             }
         }
-        int pos = ftell(f);
+        long long pos = ftell(f);
         fseek(f, 0, SEEK_SET);
         while(ftell(f)!=beg){
             putc(getc(f), g);
@@ -539,14 +615,95 @@ void removestr(char name[], long long line, long long col, long long size, char 
         fclose(g);
         fclose(f);
         FILE *f2 = fopen(name, "w");
-        FILE *g2 = fopen("root\\.hidden\\$func_remove.txt", "r");
+        FILE *g2 = fopen("root\\.hidden$func\\$func_remove.txt", "r");
         while((tmp=getc(g2))!=EOF){
             putc(tmp, f);
         }
         fclose(g2);
         fclose(f2);
     }
-    printf("Operation is done successfully.\n");
+    printf("operation done successfully.\n");
+}
+
+void copystr(char name[], long long line, long long col, long long size, char flag, int cut){
+    if(!addcheck(name)){
+        printf("such file doesn't exist!\n");
+        return;
+    }
+    name++;
+    long long *ppos = (long long*)malloc(sizeof(long long));
+    if(checkpos(name, line, col, ppos)){
+        printf("such position doesn't exist in file!\n");
+        return;
+    }
+    FILE *f = fopen(name, "r+");
+    long long pos = *ppos;
+    free(ppos);
+    fseek(f, 0, SEEK_END);
+    long long e = ftell(f);
+    fseek(f, pos, SEEK_SET);
+    FILE *g = fopen("root\\.hidden$func\\$func_copy.txt", "w");
+    if(flag=='b'){
+        long long beg;
+        char tmp;
+        for(long long i=0; i<size; i++){
+            if(ftell(f)==0){
+                printf("there aren't enough charachters! decrease size or change position.\n");
+                return;
+            }
+            fseek(f, -1, SEEK_CUR);
+            tmp=getc(f);
+            fseek(f, -1, SEEK_CUR);
+            if(tmp=='\n'){
+                fseek(f, -1, SEEK_CUR);
+            }
+        }
+        while(ftell(f)!=pos){
+            putc(getc(f), g);
+        }
+        fclose(g);
+    }
+    else{
+        for(long long i=0; i<size; i++){
+            if(ftell(f)==e){
+                printf("there aren't enough charachters! decrease size or change position.\n");
+                return;
+            }
+            putc(getc(f), g);
+        }
+        fclose(g);
+    }
+    if(cut){
+        removestr(name, line, col, size, flag);
+    }
+    fclose(f);
+    printf("operation done successfully.\n");
+}
+
+void pastestr(char name[], long long line, long long col){
+    if(!addcheck(name)){
+        printf("such file doesn't exist!\n");
+        return;
+    }
+    name++;
+    long long *ppos = (long long*)malloc(sizeof(long long));
+    if(checkpos(name, line, col, ppos)){
+        printf("such position doesn't exist in file!\n");
+        return;
+    }
+    FILE *f = fopen(name, "r+");
+    long long pos = *ppos;
+    free(ppos);
+    fseek(f, pos, SEEK_SET);
+    FILE *g = fopen("root\\.hidden$func\\$func_copy.txt", "r");
+    char tmp;
+    while((tmp=getc(g))!=EOF){
+        shiftfile(f, 1);
+        putc(tmp, f);
+    }
+    fclose(g);
+    fclose(f);
+    printf("operation done successfully!\n");
 }
 
 
