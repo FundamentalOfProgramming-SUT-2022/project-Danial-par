@@ -5,9 +5,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define LINE_SIZE 1000
-#define ORDER_SIZE 50
-#define MAX 100
+#define LINE_SIZE 1000000
+#define ORDER_SIZE 500
+#define MAX 1000
 
 struct finder{
     long long pl;
@@ -39,6 +39,8 @@ int checkpos(char[], long long, long long, long long*);
 void pastestr(char[], long long, long long);
 struct finder* find(char[], char[], int *);
 void replace(char[], char[], char[], int, long long);
+int findfilenames(char*[], char *);
+char* grep(char*[], char[], int, int);
 
 //              //              //
 int main(){
@@ -354,6 +356,38 @@ int main(){
             replace(filename, stext, rtext, flag, at);
         }
 
+        else if(!strcmp(order, "grep")){
+            char* ptr = line+5;
+            int opt=0;
+            if(!strncmp(ptr, "-c", 2)){
+                opt=1;
+                ptr+=3;
+            }
+            else if(!strncmp(ptr, "-l", 2)){
+                opt=2;
+                ptr+=3;
+            }
+            char text[LINE_SIZE];
+            ptr = findtext(ptr, text);
+            if(ptr==NULL){
+                continue;
+            }
+            char* names[1000];
+            for(int i=0; i<1000; i++){
+                names[i] = (char *)malloc(sizeof(char)*MAX);
+            }
+            if(strncmp(ptr, "--files", 7)){
+                printf("invalid command.\n");
+                continue;
+            }
+            ptr+=8;
+            int filenum = findfilenames(names, ptr);
+            if(filenum==-1){
+                continue;
+            }
+            grep(names, text, opt, filenum);
+        }
+
         else{
                 printf("invalid command.\n");
                 continue;
@@ -370,37 +404,42 @@ void createfile(char name[]){
     char name2[strlen(name)+1];
     strcpy(name2, name);
     char *cpy = name2;
-    if(1){
-        char file[strlen(name)];
-        p = strrchr(cpy, '\\');
-        if(p==NULL || p==name){
-            printf("invalid address.\n");
-            chdir(my_add);
-            return;
-        }
-        strcpy(file, p+1);
-        char add[strlen(name)+3];
-        *p = '\0';
-        cpy++;
-        p = strtok(cpy, "\\");
-        while(p!=NULL){
-            add[0] = '.'; add[1] = '\\'; add[2] = '\0';
-            strcat(add, p);
-            mkdir(add);
-            chdir(add);
-            p = strtok(NULL, "\\");
-        }
-        chdir(name+1);
-        FILE* f = fopen(file, "r+");
-        if(!f){
-          FILE* fil = fopen(file, "w");
-          fclose(fil);
-          printf("operation done successfully.\n");
-        }
-        else{
-          printf("file already exist\n");
-          fclose(f);
-        }
+    char file[strlen(name)];
+    p = strrchr(cpy, '\\');
+    if(p==NULL || p==name){
+        printf("invalid address.\n");
+        chdir(my_add);
+        return;
+    }
+    strcpy(file, p+1);
+    char add[strlen(name)+3];
+    *p = '\0';
+    cpy++;
+    p = strtok(cpy, "\\");
+    while(p!=NULL){
+        add[0] = '.'; add[1] = '\\'; add[2] = '\0';
+        strcat(add, p);
+        mkdir(add);
+        chdir(add);
+        p = strtok(NULL, "\\");
+    }
+    chdir(name+1);
+    FILE* f = fopen(file, "r+");
+    if(!f){
+        FILE* fil = fopen(file, "w");
+        fclose(fil);
+        char backup[MAX];
+        backup[0]='.';
+        backup[1]='\0';
+        strcat(backup, file);
+        strcat(backup, "$$hidden");
+        FILE* fp = fopen(backup, "w");
+        fclose(fp);
+        printf("operation done successfully.\n");
+    }
+    else{
+        printf("file already exist\n");
+        fclose(f);
     }
     chdir(my_add);
 }
@@ -1060,9 +1099,9 @@ void replace(char name[], char stext[], char rtext[], int flag, long long at){
             printf("there are less than %d matches.\n", at);
             return;
         }
-        int tmp = removestr(name, matches[at].byline, matches[at].linepos, matches[at].epl-matches[at].pl+1, 'f', 0);
+        int tmp = removestr(name, matches[at-1].byline, matches[at-1].linepos, matches[at-1].epl-matches[at-1].pl+1, 'f', 0);
         if(tmp!=-1){
-            insert(name, rtext, matches[at].byline, matches[at].linepos);
+            insert(name, rtext, matches[at-1].byline, matches[at-1].linepos);
         }
     }
     else if(flag==2){
@@ -1090,6 +1129,80 @@ void replace(char name[], char stext[], char rtext[], int flag, long long at){
         printf("operation done successfully.\n");
     }
     free(matches);
+}
+
+int findfilenames(char* names[], char * ptr){
+    int counter=0;
+    ptr--;
+    while(ptr[0] != '\0'){
+        ptr++;
+        char name[MAX];
+        name[0]='\0';
+        char tmp[2]; 
+        tmp[1]='\0';
+        while(ptr[0]!=' ' && ptr[0]!='\0'){
+            tmp[0]=ptr[0];
+            strcat(name, tmp);
+            ptr++;
+        }
+        if(!addcheck(name)){
+            printf("one of the files doesn't exist.\n");
+            return -1;
+        }
+        strcpy(names[counter], name);
+        counter++;
+    }
+    return counter;
+}
+
+char* grep(char *names[], char text[], int opt, int num){
+    long long linenumbers=0;
+    for(int i=0; i<num; i++){
+        struct finder *matches = (struct finder*)malloc(sizeof(struct finder)*LINE_SIZE);
+        int *counter = (int *)malloc(sizeof(int));
+        matches = find(names[i], text, counter);
+        int count = *counter;
+        if(opt==2){
+            if(count!=0){
+                printf("%s\n", names[i]+6);
+            }
+        }
+        else if(opt==1){
+            if(count!=0){
+                linenumbers++;
+            }
+            for(int j=1; j<count; j++){
+                if(matches[j].byline!=matches[j-1].byline){
+                    linenumbers++;
+                }
+            }
+        }
+        else if(opt==0){
+            if(count==0){
+                continue;
+            }
+            printf("\n%s:\n", names[i]+6);
+            FILE *f = fopen(names[i]+1, "r");
+            char line[LINE_SIZE];
+            for(int j=0; j<matches[0].byline; j++){
+                fgets(line, LINE_SIZE, f);
+            }
+            printf("%s", line);
+            for(int j=1; j<count; j++){
+                if(matches[j].byline==matches[j-1].byline){
+                    continue;
+                }
+                for(int k=0; k<matches[j].byline-matches[j-1].byline; k++){
+                    fgets(line, LINE_SIZE, f);
+                }
+                printf("%s", line);
+            }
+        }
+        free(matches); free(counter);
+    }
+    if(opt==1){
+        printf("%lli\n", linenumbers);
+    }
 }
 
 
