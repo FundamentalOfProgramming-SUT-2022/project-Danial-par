@@ -4,6 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/types.h> 
+#include <dirent.h> 
 
 #define LINE_SIZE 10000
 #define ORDER_SIZE 500
@@ -17,8 +19,6 @@ struct finder{
     long long byline;
     long long linepos;
 };
-
-//           functions          //
 void createfile(char[]);
 long long strtolli(char*);
 long long tavan(long long, int);
@@ -42,6 +42,10 @@ void replace(char[], char[], char[], int, long long, int);
 int findfilenames(char*[], char *);
 char* grep(char*[], char[], int, int);
 void undo(char[]);
+void indent(char[], int);
+void delchar(FILE *);
+void compare(char*[]);
+void tree(char *, int, int); 
 
 //              //              //
 int main(){
@@ -397,6 +401,38 @@ int main(){
             undo(filename);
         }
 
+        else if(!strcmp(order, "auto-indent")){
+            char filename[MAX];
+            char *s = findfilename(line+12, filename);
+            if(s==NULL){
+                continue;
+            }
+            indent(filename, 1);
+        }
+
+        else if(!strcmp(order, "compare")){
+            char *ptr = line+8;
+            char* names[2];
+            for(int i=0; i<2; i++){
+                names[i] = (char *)malloc(sizeof(char)*MAX);
+            }
+            findfilenames(names, ptr);
+            compare(names);
+        }
+
+        else if(!strcmp(order, "tree")){
+            int depth=0;
+            char *ptr = line+5;
+            char dep[100]; dep[0]='\0';
+            while(*ptr!='\0'){
+                char tmp[2]; tmp[0]=*ptr; tmp[1]='\0';
+                strcat(dep, tmp);
+                ptr++;
+            }
+            depth = strtolli(dep);
+            tree("root", 0, depth);
+        }
+
         else{
                 printf("invalid command.\n");
                 continue;
@@ -633,6 +669,10 @@ void insert(char name[], char text[], long long line, long long col, int undo){
                 insertn(f, ftell(f), '\n');
                 i++;
             }
+            else if(text[i+1]=='t'){
+                insertn(f, ftell(f), '\t');
+                i++;
+            }
             else if(text[i+1]=='\\' && text[i+2]=='n'){
                 insertn(f, ftell(f), '\\');
                 insertn(f, ftell(f), 'n');
@@ -729,11 +769,11 @@ void cat(char name[]){
     FILE *f = fopen(name, "r+");
     char a;
     printf("here is the file content:\n");
-    printf("----------------------------\n");
+    printf("============================\n");
     while((a=getc(f))!=EOF){
         printf("%c", a);
     }
-    printf("\n----------------------------\n");
+    printf("\n============================\n");
 }
 
 char* findsize(char *ptr, long long *size){
@@ -1313,3 +1353,196 @@ void undo(char name[]){
     fclose(f); fclose(fp);
     printf("operation done successfully.\n");
 }
+
+void indent(char name[], int undo){
+    if(!addcheck(name)){
+        printf("such file doesn't exist!\n");
+        return;
+    }
+    name++;
+    FILE *f = fopen(name, "r");
+    FILE *g = fopen("backups\\$func_indent.txt", "w+");
+    if(undo){
+        char backup[MAX];
+        char* ptr = strchr(name, '\\');
+        *ptr = '\0';
+        backup[0]='\0';
+        strcat(backup, name);
+        char tmpp[] = "\\.$$hidden";
+        strcat(backup, tmpp);
+        strcat(backup, ptr+1);
+        *ptr='\\';
+        FILE* fp = fopen(backup, "w");
+        char tmp;
+        while((tmp=getc(f))!=EOF){
+            putc(tmp, fp);
+        }
+        fclose(fp);
+        fseek(f, 0, SEEK_SET);
+    }
+    int tabs=0;
+    char tmp;
+    while((tmp=getc(f))!=EOF){
+        if(tmp!='\n' && tmp!='{' && tmp!='}'){
+            putc(tmp, g);
+        }
+        else if(tmp=='\n'){
+            putc(tmp, g);
+            for(int i=0; i<tabs; i++){
+                putc('\t', g);
+            }
+        }
+        else if(tmp=='{'){
+            fseek(g, -1, SEEK_CUR);
+            char tmpp;
+            while((tmpp=getc(g))==' ' || tmpp=='\t' || tmpp=='\n'){
+                delchar(g);
+                fseek(g, -1, SEEK_CUR);
+            }
+            fseek(g, 0, SEEK_CUR);
+            putc(' ', g); putc('{', g); putc('\n', g);
+            tabs++;
+            for(int i=0; i<tabs; i++){
+                putc('\t', g);
+            }
+        }
+        else if(tmp=='}'){
+            putc('\n', g);
+            tabs--;
+            for(int i=0; i<tabs; i++){
+                putc('\t', g);
+            }
+            putc('}', g);
+            char tmpp = getc(f);
+            if(tmpp==EOF){
+                break;
+            }
+            else if(tmpp=='\n'){
+                fseek(f, -2, SEEK_CUR);
+            }
+            else{
+                fseek(f, -1, SEEK_CUR);
+                putc('\n', g);
+            }
+            for(int i=0; i<tabs; i++){
+                putc('\t', g);
+            }
+        }
+    }
+    fclose(f); fclose(g);
+    FILE *h = fopen(name, "w");
+    FILE *j = fopen("backups\\$func_indent.txt", "r");
+    while((tmp=getc(j))!=EOF){
+        putc(tmp, h);
+    }
+    fclose(h); fclose(j);
+    printf("operation done successfully.\n");
+}
+
+void delchar(FILE *f){
+    long long where = ftell(f);
+    char tmp;
+    while((tmp=getc(f))!=EOF){
+        fseek(f, -2, SEEK_CUR);
+        if(tmp=='\n'){
+            fseek(f, -1, SEEK_CUR);
+        }
+        putc(tmp, f);
+        fseek(f, 1, SEEK_CUR);
+    }
+    fseek(f, -2, SEEK_CUR);
+    putc(EOF, f);
+    fseek(f, where-1, SEEK_SET);
+}
+
+void compare(char *names[]){
+    FILE *f = fopen(names[0]+1, "r+");
+    FILE *g = fopen(names[1]+1, "r+");
+    long long l1=0; 
+    long long l2=0;
+    char tmp;
+    if(getc(f)!=EOF){
+        l1++;
+        fseek(f, 0, SEEK_SET);
+    }
+    if(getc(g)!=EOF){
+        l2++;
+        fseek(g, 0, SEEK_SET);
+    }
+    while((tmp=getc(f))!=EOF){
+        if(tmp=='\n'){
+            l1++;
+        }
+    }
+    while((tmp=getc(g))!=EOF){
+        if(tmp=='\n'){
+            l2++;
+        }
+    }
+    fseek(f, 0, SEEK_SET);
+    fseek(g, 0, SEEK_SET);
+    for(long long i=1; i<=l1 && i<=l2; i++){
+        char line1[LINE_SIZE]; char line2[LINE_SIZE];
+        fgets(line1, LINE_SIZE, f);
+        fgets(line2, LINE_SIZE, g);
+        if(strcmp(line1, line2)){
+            printf("============ #%lli ============\n", i);
+            if(i==l1){
+                printf("%s\n%s", line1, line2);
+            }
+            else if(i==l2){
+                printf("%s%s\n", line1, line2);
+            }
+            else{
+                printf("%s%s", line1, line2);
+            }
+        }
+    }
+    if(l1>l2){
+        printf("<<<<<<<<<<<< #%lli - #%lli <<<<<<<<<<<<\n", l2+1, l1);
+        char line[LINE_SIZE];
+        for(int i=l2+1; i<=l1; i++){
+            fgets(line, LINE_SIZE, f);
+            printf("%s\n", line);
+        }
+    }
+    else if(l2>l1){
+        printf(">>>>>>>>>>>> #%lli - #%lli >>>>>>>>>>>>\n", l1+1, l2);
+        char line[LINE_SIZE];
+        for(int i=l1+1; i<=l2; i++){
+            fgets(line, LINE_SIZE, g);
+            printf("%s\n", line);
+        }
+    }
+}
+
+void tree(char *rpath, int root, int depth){ 
+    DIR *dir = opendir(rpath); 
+    if(!dir){
+        return; 
+    }
+    struct dirent *d; 
+    while((d = readdir(dir)) != NULL){ 
+        if(strncmp(d->d_name, ".$$hidden", 8) && strcmp(d->d_name, ".") && strcmp(d->d_name, "..")){ 
+            for(int i=0; i<root; i++){ 
+                if(i%3==0){
+                    printf("%c", '|');
+                    continue; 
+                }
+                printf(" "); 
+            }
+            printf("%c%c%c%s\n",'|', '_', '_', d->d_name); 
+            char newpath[1000];
+            newpath[0]='\0'; 
+            strcat(newpath, rpath); 
+            strcat(newpath, "/"); 
+            strcat(newpath, d->d_name);
+            if(root+3<depth*3){ 
+                tree(newpath, root + 3, depth);
+            }
+        } 
+    } 
+    closedir(dir); 
+}
+
+
