@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define LINE_SIZE 1000000
+#define LINE_SIZE 10000
 #define ORDER_SIZE 500
 #define MAX 1000
 
@@ -28,19 +28,20 @@ char* findpos(char*, long long*, long long*);
 char* findsize(char*, long long*);
 char* rmg(char[]);
 void insertn(FILE*, long long, char);
-void insert(char[], char[], long long, long long);
+void insert(char[], char[], long long, long long, int);
 int addcheck(char[]);
 int DirCheck(const char *path);
 void shiftfile(FILE*, int);
 void cat(char[]);
-int removestr(char[], long long, long long, long long, char, int);
+int removestr(char[], long long, long long, long long, char, int, int);
 void copystr(char[], long long, long long, long long, char, int);
 int checkpos(char[], long long, long long, long long*);
-void pastestr(char[], long long, long long);
+void pastestr(char[], long long, long long, int);
 struct finder* find(char[], char[], int *);
-void replace(char[], char[], char[], int, long long);
+void replace(char[], char[], char[], int, long long, int);
 int findfilenames(char*[], char *);
 char* grep(char*[], char[], int, int);
+void undo(char[]);
 
 //              //              //
 int main(){
@@ -62,7 +63,6 @@ int main(){
         else if(!strcmp(order, "createfile")){
             char filename[MAX];
             char *s = findfilename(line+11, filename);
-            
             if(s!=NULL){
                 createfile(filename);
             }
@@ -88,7 +88,7 @@ int main(){
                 free(line); free(col);
                 continue;
             }
-            insert(filename, text, *line, *col);
+            insert(filename, text, *line, *col, 1);
             free(line); free(col);
             continue;
         }
@@ -153,7 +153,7 @@ int main(){
             }
             switch(w){
                 case 0:
-                    removestr(filename, *line, *col, *size, flag[1], 0);
+                    removestr(filename, *line, *col, *size, flag[1], 0, 1);
                     break;
                 case 1:
                     copystr(filename, *line, *col, *size, flag[1], 0);
@@ -180,7 +180,7 @@ int main(){
                 free(line); free(col);
                 continue;
             }
-            pastestr(filename, *line, *col);
+            pastestr(filename, *line, *col, 1);
             free(line); free(col);
             continue;
         }
@@ -353,7 +353,7 @@ int main(){
                 printf("invalid command. attribute can be -at or -all.\n");
                 continue;
             }
-            replace(filename, stext, rtext, flag, at);
+            replace(filename, stext, rtext, flag, at, 1);
         }
 
         else if(!strcmp(order, "grep")){
@@ -386,6 +386,15 @@ int main(){
                 continue;
             }
             grep(names, text, opt, filenum);
+        }
+
+        else if(!strcmp(order, "undo")){
+            char filename[MAX];
+            char *s = findfilename(line+5, filename);
+            if(s==NULL){
+                continue;
+            }
+            undo(filename);
         }
 
         else{
@@ -429,10 +438,9 @@ void createfile(char name[]){
         FILE* fil = fopen(file, "w");
         fclose(fil);
         char backup[MAX];
-        backup[0]='.';
-        backup[1]='\0';
+        backup[0]='\0';
+        strcat(backup, ".$$hidden");
         strcat(backup, file);
-        strcat(backup, "$$hidden");
         FILE* fp = fopen(backup, "w");
         fclose(fp);
         printf("operation done successfully.\n");
@@ -567,13 +575,31 @@ char* rmg(char name[]){
     }
 }
 
-void insert(char name[], char text[], long long line, long long col){
+void insert(char name[], char text[], long long line, long long col, int undo){
     if(!addcheck(name)){
         printf("such file doesn't exist!\n");
         return;
     }
     name++;
     FILE *f = fopen(name, "r+");
+    if(undo){
+        char backup[MAX];
+        char* ptr = strchr(name, '\\');
+        *ptr = '\0';
+        backup[0]='\0';
+        strcat(backup, name);
+        char tmpp[] = "\\.$$hidden";
+        strcat(backup, tmpp);
+        strcat(backup, ptr+1);
+        *ptr='\\';
+        FILE* fp = fopen(backup, "w");
+        char tmp;
+        while((tmp=getc(f))!=EOF){
+            putc(tmp, fp);
+        }
+        fclose(fp);
+        fseek(f, 0, SEEK_SET);
+    }
     long long count=1;
     char tmp;
     while((tmp=getc(f))!=EOF){
@@ -754,7 +780,7 @@ int checkpos(char name[], long long line, long long col, long long *ppos){
     return 0;
 }
 
-int removestr(char name[], long long line, long long col, long long size, char flag, int print){
+int removestr(char name[], long long line, long long col, long long size, char flag, int print, int undo){
     if(!addcheck(name)){
         printf("such file doesn't exist!\n");
         return -1;
@@ -766,6 +792,24 @@ int removestr(char name[], long long line, long long col, long long size, char f
         return -1;
     }
     FILE *f = fopen(name, "r+");
+    if(undo){
+        char backup[MAX];
+        char* ptr = strchr(name, '\\');
+        *ptr = '\0';
+        backup[0]='\0';
+        strcat(backup, name);
+        char tmpp[] = "\\.$$hidden";
+        strcat(backup, tmpp);
+        strcat(backup, ptr+1);
+        *ptr='\\';
+        FILE* fp = fopen(backup, "w");
+        char tmp;
+        while((tmp=getc(f))!=EOF){
+            putc(tmp, fp);
+        }
+        fclose(fp);
+        fseek(f, 0, SEEK_SET);
+    }
     long long pos = *ppos;
     free(ppos);
     fseek(f, 0, SEEK_END);
@@ -898,7 +942,7 @@ void copystr(char name[], long long line, long long col, long long size, char fl
     }
     if(cut){
         name--;
-        removestr(name, line, col, size, flag, 1);
+        removestr(name, line, col, size, flag, 1, 1);
     }
     fclose(f);
     FILE *h = fopen("backups\\$func_copy2.txt", "r");
@@ -913,7 +957,7 @@ void copystr(char name[], long long line, long long col, long long size, char fl
     }
 }
 
-void pastestr(char name[], long long line, long long col){
+void pastestr(char name[], long long line, long long col, int undo){
     if(!addcheck(name)){
         printf("such file doesn't exist!\n");
         return;
@@ -925,6 +969,24 @@ void pastestr(char name[], long long line, long long col){
         return;
     }
     FILE *f = fopen(name, "r+");
+    if(undo){
+        char backup[MAX];
+        char* ptr = strchr(name, '\\');
+        *ptr = '\0';
+        backup[0]='\0';
+        strcat(backup, name);
+        char tmpp[] = "\\.$$hidden";
+        strcat(backup, tmpp);
+        strcat(backup, ptr+1);
+        *ptr='\\';
+        FILE* fp = fopen(backup, "w");
+        char tmp;
+        while((tmp=getc(f))!=EOF){
+            putc(tmp, fp);
+        }
+        fclose(fp);
+        fseek(f, 0, SEEK_SET);
+    }
     long long pos = *ppos;
     free(ppos);
     fseek(f, pos, SEEK_SET);
@@ -1078,7 +1140,7 @@ struct finder* find(char name[], char text[], int *counter){
     return matches;
 }
 
-void replace(char name[], char stext[], char rtext[], int flag, long long at){
+void replace(char name[], char stext[], char rtext[], int flag, long long at, int undo){
     int *counter = (int*)(malloc(sizeof(int)));
     struct finder *matches = (struct finder*)malloc(sizeof(struct finder)*LINE_SIZE);
     matches = find(name, stext, counter);
@@ -1089,9 +1151,11 @@ void replace(char name[], char stext[], char rtext[], int flag, long long at){
     int count = *counter;
     free(counter);
     if(flag==0){
-        int tmp = removestr(name, matches[0].byline, matches[0].linepos, matches[0].epl-matches[0].pl+1, 'f', 0);
+        int tmp = removestr(name, matches[0].byline, matches[0].linepos, matches[0].epl-matches[0].pl+1, 'f', 0, 1);
         if(tmp!=-1){
-            insert(name, rtext, matches[0].byline, matches[0].linepos);
+            FILE *f = fopen(name, "r");
+            fclose(f);
+            insert(name, rtext, matches[0].byline, matches[0].linepos, 0);
         }
     }
     else if(flag==1){
@@ -1099,15 +1163,35 @@ void replace(char name[], char stext[], char rtext[], int flag, long long at){
             printf("there are less than %d matches.\n", at);
             return;
         }
-        int tmp = removestr(name, matches[at-1].byline, matches[at-1].linepos, matches[at-1].epl-matches[at-1].pl+1, 'f', 0);
+        FILE *f = fopen(name, "r");
+        fclose(f);
+        int tmp = removestr(name, matches[at-1].byline, matches[at-1].linepos, matches[at-1].epl-matches[at-1].pl+1, 'f', 0, 1);
         if(tmp!=-1){
-            insert(name, rtext, matches[at-1].byline, matches[at-1].linepos);
+            insert(name, rtext, matches[at-1].byline, matches[at-1].linepos, 0);
         }
     }
     else if(flag==2){
         FILE *g = fopen("backups\\$func_replace.txt", "w");
         name++; 
         FILE *f = fopen(name, "r");
+        if(undo){
+            char backup[MAX];
+            char* ptr = strchr(name, '\\');
+            *ptr = '\0';
+            backup[0]='\0';
+            strcat(backup, name);
+            char tmpp[] = "\\.$$hidden";
+            strcat(backup, tmpp);
+            strcat(backup, ptr+1);
+            *ptr='\\';
+            FILE* fp = fopen(backup, "w");
+            char tmp;
+            while((tmp=getc(f))!=EOF){
+                putc(tmp, fp);
+            }
+            fclose(fp);
+            fseek(f, 0, SEEK_SET);
+        }
         for(int i=0; i<count; i++){
             while(ftell(f)!=matches[i].pl){
                 putc(getc(f), g);
@@ -1205,4 +1289,27 @@ char* grep(char *names[], char text[], int opt, int num){
     }
 }
 
-
+void undo(char name[]){
+    if(!addcheck(name)){
+        printf("such file doesn't exist!\n");
+        return;
+    }
+    name++;
+    char backup[MAX];
+    char* ptr = strchr(name, '\\');
+    *ptr = '\0';
+    backup[0]='\0';
+    strcat(backup, name);
+    char tmpp[] = "\\.$$hidden";
+    strcat(backup, tmpp);
+    strcat(backup, ptr+1);
+    *ptr='\\';
+    FILE* fp = fopen(backup, "r");
+    FILE *f = fopen(name, "w");
+    char tmp;
+    while((tmp=getc(fp))!=EOF){
+        putc(tmp, f);
+    }
+    fclose(f); fclose(fp);
+    printf("operation done successfully.\n");
+}
