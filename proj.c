@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <dir.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -49,8 +48,8 @@ void tree(char *, int, int);
 
 //              //              //
 int main(){
-    mkdir("root");
-    mkdir("backups");
+    mkdir("root", 0777);
+    mkdir("backups", 0777);
     while(1){
         char line[LINE_SIZE];
         gets(line);
@@ -157,7 +156,7 @@ int main(){
             }
             switch(w){
                 case 0:
-                    removestr(filename, *line, *col, *size, flag[1], 0, 1);
+                    removestr(filename, *line, *col, *size, flag[1], 1, 1);
                     break;
                 case 1:
                     copystr(filename, *line, *col, *size, flag[1], 0);
@@ -286,14 +285,14 @@ int main(){
             }
             else if(flags==4){
                 if(at>count){
-                    printf("there are less than %d matches.\n", at);
+                    printf("there are less than %lli matches.\n", at);
                     continue;
                 }
                 printf("%lli\n", matches[at-1].outpl);
             }
             else if(flags==6){
                 if(at>count){
-                    printf("there are less than %d matches.\n", at);
+                    printf("there are less than %lli matches.\n", at);
                     continue;
                 }
                 printf("%lli\n", matches[at-1].bw);
@@ -313,20 +312,74 @@ int main(){
             char rtext[LINE_SIZE];
             long long at=0;
             int flag=0;
-            ptr = findtext(ptr, stext);
-            if(ptr==NULL){
+            if(strncmp(ptr, "--str1 ", 7)){
+                printf("invalid command. use --str1.\n");
                 continue;
             }
-            ptr = findtext(ptr, rtext);
-            if(ptr==NULL){
+            ptr+=7;
+            char *s = ptr;
+            strcpy(stext, ptr);
+            if(s[0] == '"'){
+                s++;
+                s = strchr(s, '"');
+                while(*(s-1)=='\\'){
+                    s++;
+                    s = strchr(s, '"');
+                }
+                long long i = s-ptr;
+                *(stext+i) = '\0';
+                for(long long i=0; stext[i+1]!='\0'; i++){
+                    stext[i]=stext[i+1];
+                    stext[i+1]='\0';
+                }
+                ptr = s+2;
+            }
+            else{
+                while(*s!=' ' && *s!='\0'){
+                    s++;
+                }
+                long long i = s-ptr;
+                stext[i] = '\0';
+                ptr = s+1;
+            }
+
+            if(strncmp(ptr, "--str2 ", 7)){
+                printf("invalid command. use --str2.\n");
                 continue;
             }
+            ptr+=7;
+            s = ptr;
+            strcpy(rtext, ptr);
+            if(s[0] == '"'){
+                s++;
+                s = strchr(s, '"');
+                while(*(s-1)=='\\'){
+                    s++;
+                    s = strchr(s, '"');
+                }
+                long long i = s-ptr;
+                *(rtext+i) = '\0';
+                for(long long i=0; rtext[i+1]!='\0'; i++){
+                    rtext[i]=rtext[i+1];
+                    rtext[i+1]='\0';
+                }
+                ptr = s+2;
+            }
+            else{
+                while(*s!=' ' && *s!='\0'){
+                    s++;
+                }
+                long long i = s-ptr;
+                rtext[i] = '\0';
+                ptr = s+1;
+            }
+
             char filename[MAX];
             ptr = findfilename(ptr, filename);
             if(ptr==NULL){
                 continue;
             }
-            if(ptr[0]=='\0'){
+            if(*(ptr-1)=='\0'){
             }
             else if(!strncmp(ptr, "-at", 3)){
                 ptr+=4;
@@ -430,6 +483,10 @@ int main(){
                 ptr++;
             }
             depth = strtolli(dep);
+            if(depth<=0){
+                printf("depth must be positive.\n");
+                continue;
+            }
             tree("root", 0, depth);
         }
 
@@ -437,7 +494,7 @@ int main(){
                 printf("invalid command.\n");
                 continue;
             }
-        }
+    }
         return 0;
 }
 
@@ -450,7 +507,7 @@ void createfile(char name[]){
     strcpy(name2, name);
     char *cpy = name2;
     char file[strlen(name)];
-    p = strrchr(cpy, '\\');
+    p = strrchr(cpy, '/');
     if(p==NULL || p==name){
         printf("invalid address.\n");
         chdir(my_add);
@@ -460,13 +517,13 @@ void createfile(char name[]){
     char add[strlen(name)+3];
     *p = '\0';
     cpy++;
-    p = strtok(cpy, "\\");
+    p = strtok(cpy, "/");
     while(p!=NULL){
-        add[0] = '.'; add[1] = '\\'; add[2] = '\0';
+        add[0] = '.'; add[1] = '/'; add[2] = '\0';
         strcat(add, p);
-        mkdir(add);
+        mkdir(add, 0777);
         chdir(add);
-        p = strtok(NULL, "\\");
+        p = strtok(NULL, "/");
     }
     chdir(name+1);
     FILE* f = fopen(file, "r+");
@@ -499,7 +556,7 @@ char* findfilename(char *text, char *hold){
     if(s[0] == '"'){
         s++;
         s = strchr(s, '"');
-        while(*(s-1)=='\\'){
+        while(*(s-1)=='/'){
             s++;
             s = strchr(s, '"');
         }
@@ -516,8 +573,8 @@ char* findfilename(char *text, char *hold){
     }
     int i = s-text;
     hold[i] = '\0';
-    if(hold[0]!='\\'){
-        printf("invalid file address. use \\ at the begining of address.\n");
+    if(hold[0]!='/'){
+        printf("invalid file address. use / at the begining of address.\n");
         return NULL;
     }
     return s+1;
@@ -620,14 +677,14 @@ void insert(char name[], char text[], long long line, long long col, int undo){
     FILE *f = fopen(name, "r+");
     if(undo){
         char backup[MAX];
-        char* ptr = strchr(name, '\\');
+        char* ptr = strchr(name, '/');
         *ptr = '\0';
         backup[0]='\0';
         strcat(backup, name);
-        char tmpp[] = "\\.$$hidden";
+        char tmpp[] = "/.$$hidden";
         strcat(backup, tmpp);
         strcat(backup, ptr+1);
-        *ptr='\\';
+        *ptr='/';
         FILE* fp = fopen(backup, "w");
         char tmp;
         while((tmp=getc(f))!=EOF){
@@ -693,21 +750,19 @@ void insert(char name[], char text[], long long line, long long col, int undo){
 void insertn(FILE* f, long long p, char c){
     fseek(f, p, SEEK_SET);
     shiftfile(f, 1);
-    if(c=='\n'){
-        shiftfile(f, 1);
-    }
+
     putc(c, f);
 }
 
 void shiftfile(FILE* f, int n){
-    FILE *g = fopen("backups\\$func_shift.txt", "w");
+    FILE *g = fopen("backups/$func_shift.txt", "w");
     long long w = ftell(f);
     char a;
     while((a=getc(f))!=EOF){
         putc(a, g);
     }
     fclose(g);
-    FILE *h = fopen("backups\\$func_shift.txt", "r");
+    FILE *h = fopen("backups/$func_shift.txt", "r");
     fseek(f, w, SEEK_SET);
     for(int i=0; i<n; i++){
         putc(' ', f);
@@ -726,7 +781,7 @@ int addcheck(char name[]){
     char filename[MAX];
     strcpy(name2, name);
     char* p = name2+1;
-    p = strrchr(p, '\\');
+    p = strrchr(p, '/');
     if(p==NULL){
         return 0;
     }
@@ -834,14 +889,14 @@ int removestr(char name[], long long line, long long col, long long size, char f
     FILE *f = fopen(name, "r+");
     if(undo){
         char backup[MAX];
-        char* ptr = strchr(name, '\\');
+        char* ptr = strchr(name, '/');
         *ptr = '\0';
         backup[0]='\0';
         strcat(backup, name);
-        char tmpp[] = "\\.$$hidden";
+        char tmpp[] = "/.$$hidden";
         strcat(backup, tmpp);
         strcat(backup, ptr+1);
-        *ptr='\\';
+        *ptr='/';
         FILE* fp = fopen(backup, "w");
         char tmp;
         while((tmp=getc(f))!=EOF){
@@ -855,7 +910,7 @@ int removestr(char name[], long long line, long long col, long long size, char f
     fseek(f, 0, SEEK_END);
     long long e = ftell(f);
     fseek(f, pos, SEEK_SET);
-    FILE *g = fopen("backups\\$func_remove.txt", "w");
+    FILE *g = fopen("backups/$func_remove.txt", "w");
     if(flag=='b'){
         long long beg;
         char tmp;
@@ -867,9 +922,9 @@ int removestr(char name[], long long line, long long col, long long size, char f
             fseek(f, -1, SEEK_CUR);
             tmp=getc(f);
             fseek(f, -1, SEEK_CUR);
-            if(tmp=='\n'){
+            /* if(tmp=='\n'){
                 fseek(f, -1, SEEK_CUR);
-            }
+            } */
         }
         beg = ftell(f);
         fseek(f, 0, SEEK_SET);
@@ -885,7 +940,7 @@ int removestr(char name[], long long line, long long col, long long size, char f
         fclose(g);
         fclose(f);
         FILE *f2 = fopen(name, "w");
-        FILE *g2 = fopen("backups\\$func_remove.txt", "r");
+        FILE *g2 = fopen("backups/$func_remove.txt", "r");
         while((tmp=getc(g2))!=EOF){
             putc(tmp, f);
         }
@@ -919,7 +974,7 @@ int removestr(char name[], long long line, long long col, long long size, char f
         fclose(g);
         fclose(f);
         FILE *f2 = fopen(name, "w");
-        FILE *g2 = fopen("backups\\$func_remove.txt", "r");
+        FILE *g2 = fopen("backups/$func_remove.txt", "r");
         while((tmp=getc(g2))!=EOF){
             putc(tmp, f);
         }
@@ -949,7 +1004,7 @@ void copystr(char name[], long long line, long long col, long long size, char fl
     fseek(f, 0, SEEK_END);
     long long e = ftell(f);
     fseek(f, pos, SEEK_SET);
-    FILE *g = fopen("backups\\$func_copy2.txt", "w");
+    FILE *g = fopen("backups/$func_copy2.txt", "w");
     if(flag=='b'){
         long long beg;
         char tmp;
@@ -961,9 +1016,6 @@ void copystr(char name[], long long line, long long col, long long size, char fl
             fseek(f, -1, SEEK_CUR);
             tmp=getc(f);
             fseek(f, -1, SEEK_CUR);
-            if(tmp=='\n'){
-                fseek(f, -1, SEEK_CUR);
-            }
         }
         while(ftell(f)!=pos){
             putc(getc(f), g);
@@ -985,8 +1037,8 @@ void copystr(char name[], long long line, long long col, long long size, char fl
         removestr(name, line, col, size, flag, 1, 1);
     }
     fclose(f);
-    FILE *h = fopen("backups\\$func_copy2.txt", "r");
-    FILE *j = fopen("backups\\$func_copy.txt", "w");
+    FILE *h = fopen("backups/$func_copy2.txt", "r");
+    FILE *j = fopen("backups/$func_copy.txt", "w");
     char tmp;
     while((tmp=getc(h))!=EOF){
         putc(tmp, j);
@@ -1011,14 +1063,14 @@ void pastestr(char name[], long long line, long long col, int undo){
     FILE *f = fopen(name, "r+");
     if(undo){
         char backup[MAX];
-        char* ptr = strchr(name, '\\');
+        char* ptr = strchr(name, '/');
         *ptr = '\0';
         backup[0]='\0';
         strcat(backup, name);
-        char tmpp[] = "\\.$$hidden";
+        char tmpp[] = "/.$$hidden";
         strcat(backup, tmpp);
         strcat(backup, ptr+1);
-        *ptr='\\';
+        *ptr='/';
         FILE* fp = fopen(backup, "w");
         char tmp;
         while((tmp=getc(f))!=EOF){
@@ -1030,7 +1082,7 @@ void pastestr(char name[], long long line, long long col, int undo){
     long long pos = *ppos;
     free(ppos);
     fseek(f, pos, SEEK_SET);
-    FILE *g = fopen("backups\\$func_copy.txt", "r");
+    FILE *g = fopen("backups/$func_copy.txt", "r");
     char tmp;
     while((tmp=getc(g))!=EOF){
         shiftfile(f, 1);
@@ -1143,7 +1195,12 @@ struct finder* find(char name[], char text[], int *counter){
         for(int i=0; i<fpmc; i++){
             if(spmp[i]!=-1){
                 matches[count].pl=fpmp[i];
-                matches[count].epl=spmp[i]+strlen(sp)-1;
+                if(hasstar){
+                    matches[count].epl=spmp[i]+strlen(sp)-1;
+                }
+                else{
+                    matches[count].epl=fpmp[i]+strlen(fp)-1;
+                }
                 matches[count].linepos=fpm[i]-line;
                 count++;
             }
@@ -1165,7 +1222,7 @@ struct finder* find(char name[], char text[], int *counter){
                 wnum++;
             }
         }
-        matches[i].outpl = matches[i].pl - lnum;
+        matches[i].outpl = matches[i].pl;
         matches[i].byline=lnum+1;
         if(getc(f)!=' '){
             matches[i].bw = wnum;
@@ -1193,37 +1250,33 @@ void replace(char name[], char stext[], char rtext[], int flag, long long at, in
     if(flag==0){
         int tmp = removestr(name, matches[0].byline, matches[0].linepos, matches[0].epl-matches[0].pl+1, 'f', 0, 1);
         if(tmp!=-1){
-            FILE *f = fopen(name, "r");
-            fclose(f);
             insert(name, rtext, matches[0].byline, matches[0].linepos, 0);
         }
     }
     else if(flag==1){
         if(at>count){
-            printf("there are less than %d matches.\n", at);
+            printf("there are less than %lli matches.\n", at);
             return;
         }
-        FILE *f = fopen(name, "r");
-        fclose(f);
         int tmp = removestr(name, matches[at-1].byline, matches[at-1].linepos, matches[at-1].epl-matches[at-1].pl+1, 'f', 0, 1);
         if(tmp!=-1){
             insert(name, rtext, matches[at-1].byline, matches[at-1].linepos, 0);
         }
     }
     else if(flag==2){
-        FILE *g = fopen("backups\\$func_replace.txt", "w");
+        FILE *g = fopen("backups/$func_replace.txt", "w");
         name++; 
         FILE *f = fopen(name, "r");
         if(undo){
             char backup[MAX];
-            char* ptr = strchr(name, '\\');
+            char* ptr = strchr(name, '/');
             *ptr = '\0';
             backup[0]='\0';
             strcat(backup, name);
-            char tmpp[] = "\\.$$hidden";
+            char tmpp[] = "/.$$hidden";
             strcat(backup, tmpp);
             strcat(backup, ptr+1);
-            *ptr='\\';
+            *ptr='/';
             FILE* fp = fopen(backup, "w");
             char tmp;
             while((tmp=getc(f))!=EOF){
@@ -1244,7 +1297,7 @@ void replace(char name[], char stext[], char rtext[], int flag, long long at, in
            putc(tmp, g);
         }
         fclose(g); fclose(f);
-        FILE *h = fopen("backups\\$func_replace.txt", "r");
+        FILE *h = fopen("backups/$func_replace.txt", "r");
         FILE *j = fopen(name, "w");
         while((tmp=getc(h))!=EOF){
             putc(tmp, j);
@@ -1305,7 +1358,7 @@ char* grep(char *names[], char text[], int opt, int num){
             if(count==0){
                 continue;
             }
-            printf("\n%s:\n", names[i]+6);
+            printf("%s:\n", names[i]+6);
             FILE *f = fopen(names[i]+1, "r");
             char line[LINE_SIZE];
             for(int j=0; j<matches[0].byline; j++){
@@ -1321,6 +1374,7 @@ char* grep(char *names[], char text[], int opt, int num){
                 }
                 printf("%s", line);
             }
+            printf("\n");
         }
         free(matches); free(counter);
     }
@@ -1336,14 +1390,14 @@ void undo(char name[]){
     }
     name++;
     char backup[MAX];
-    char* ptr = strchr(name, '\\');
+    char* ptr = strchr(name, '/');
     *ptr = '\0';
     backup[0]='\0';
     strcat(backup, name);
-    char tmpp[] = "\\.$$hidden";
+    char tmpp[] = "/.$$hidden";
     strcat(backup, tmpp);
     strcat(backup, ptr+1);
-    *ptr='\\';
+    *ptr='/';
     FILE* fp = fopen(backup, "r");
     FILE *f = fopen(name, "w");
     char tmp;
@@ -1352,107 +1406,6 @@ void undo(char name[]){
     }
     fclose(f); fclose(fp);
     printf("operation done successfully.\n");
-}
-
-void indent(char name[], int undo){
-    if(!addcheck(name)){
-        printf("such file doesn't exist!\n");
-        return;
-    }
-    name++;
-    FILE *f = fopen(name, "r");
-    FILE *g = fopen("backups\\$func_indent.txt", "w+");
-    if(undo){
-        char backup[MAX];
-        char* ptr = strchr(name, '\\');
-        *ptr = '\0';
-        backup[0]='\0';
-        strcat(backup, name);
-        char tmpp[] = "\\.$$hidden";
-        strcat(backup, tmpp);
-        strcat(backup, ptr+1);
-        *ptr='\\';
-        FILE* fp = fopen(backup, "w");
-        char tmp;
-        while((tmp=getc(f))!=EOF){
-            putc(tmp, fp);
-        }
-        fclose(fp);
-        fseek(f, 0, SEEK_SET);
-    }
-    int tabs=0;
-    char tmp;
-    while((tmp=getc(f))!=EOF){
-        if(tmp!='\n' && tmp!='{' && tmp!='}'){
-            putc(tmp, g);
-        }
-        else if(tmp=='\n'){
-            putc(tmp, g);
-            for(int i=0; i<tabs; i++){
-                putc('\t', g);
-            }
-        }
-        else if(tmp=='{'){
-            fseek(g, -1, SEEK_CUR);
-            char tmpp;
-            while((tmpp=getc(g))==' ' || tmpp=='\t' || tmpp=='\n'){
-                delchar(g);
-                fseek(g, -1, SEEK_CUR);
-            }
-            fseek(g, 0, SEEK_CUR);
-            putc(' ', g); putc('{', g); putc('\n', g);
-            tabs++;
-            for(int i=0; i<tabs; i++){
-                putc('\t', g);
-            }
-        }
-        else if(tmp=='}'){
-            putc('\n', g);
-            tabs--;
-            for(int i=0; i<tabs; i++){
-                putc('\t', g);
-            }
-            putc('}', g);
-            char tmpp = getc(f);
-            if(tmpp==EOF){
-                break;
-            }
-            else if(tmpp=='\n'){
-                fseek(f, -2, SEEK_CUR);
-            }
-            else{
-                fseek(f, -1, SEEK_CUR);
-                putc('\n', g);
-            }
-            for(int i=0; i<tabs; i++){
-                putc('\t', g);
-            }
-        }
-    }
-    fclose(f); fclose(g);
-    FILE *h = fopen(name, "w");
-    FILE *j = fopen("backups\\$func_indent.txt", "r");
-    while((tmp=getc(j))!=EOF){
-        putc(tmp, h);
-    }
-    fclose(h); fclose(j);
-    printf("operation done successfully.\n");
-}
-
-void delchar(FILE *f){
-    long long where = ftell(f);
-    char tmp;
-    while((tmp=getc(f))!=EOF){
-        fseek(f, -2, SEEK_CUR);
-        if(tmp=='\n'){
-            fseek(f, -1, SEEK_CUR);
-        }
-        putc(tmp, f);
-        fseek(f, 1, SEEK_CUR);
-    }
-    fseek(f, -2, SEEK_CUR);
-    putc(EOF, f);
-    fseek(f, where-1, SEEK_SET);
 }
 
 void compare(char *names[]){
@@ -1503,16 +1456,18 @@ void compare(char *names[]){
         char line[LINE_SIZE];
         for(int i=l2+1; i<=l1; i++){
             fgets(line, LINE_SIZE, f);
-            printf("%s\n", line);
+            printf("%s", line);
         }
+        printf("\n");
     }
     else if(l2>l1){
         printf(">>>>>>>>>>>> #%lli - #%lli >>>>>>>>>>>>\n", l1+1, l2);
         char line[LINE_SIZE];
         for(int i=l1+1; i<=l2; i++){
             fgets(line, LINE_SIZE, g);
-            printf("%s\n", line);
+            printf("%s", line);
         }
+        printf("\n");
     }
 }
 
@@ -1523,7 +1478,7 @@ void tree(char *rpath, int root, int depth){
     }
     struct dirent *d; 
     while((d = readdir(dir)) != NULL){ 
-        if(strncmp(d->d_name, ".$$hidden", 8) && strcmp(d->d_name, ".") && strcmp(d->d_name, "..")){ 
+        if(strncmp(d->d_name, ".$$hidden", 8) && strncmp(d->d_name, ".", 1) && strncmp(d->d_name, "..", 2)){ 
             for(int i=0; i<root; i++){ 
                 if(i%3==0){
                     printf("%c", '|');
@@ -1543,6 +1498,124 @@ void tree(char *rpath, int root, int depth){
         } 
     } 
     closedir(dir); 
+}
+
+void indent(char name[], int undo){
+    if(!addcheck(name)){
+        printf("such file doesn't exist!\n");
+        return;
+    }
+    name++;
+    FILE *f = fopen(name, "r");
+    FILE *g = fopen("backups/$func_indent.txt", "w+");
+    if(undo){
+        char backup[MAX];
+        char* ptr = strchr(name, '/');
+        *ptr = '\0';
+        backup[0]='\0';
+        strcat(backup, name);
+        char tmpp[] = "/.$$hidden";
+        strcat(backup, tmpp);
+        strcat(backup, ptr+1);
+        *ptr='/';
+        FILE* fp = fopen(backup, "w");
+        char tmp;
+        while((tmp=getc(f))!=EOF){
+            putc(tmp, fp);
+        }
+        fclose(fp);
+        fseek(f, 0, SEEK_SET);
+    }
+    int tabs=0;
+    char tmp;
+    long long wchar[3]={0, 0, 0};
+    while((tmp=getc(f))!=EOF){
+        if(tmp==' '){
+            wchar[0]++;
+        }
+        else if(tmp=='\t'){
+            wchar[1]++;
+        }
+        else if(tmp=='\n'){
+            wchar[2]++;
+        }
+        else if(tmp=='{'){
+            fseek(g, -1, SEEK_CUR);
+            char tmpp=getc(g);
+            fseek(g, 0, SEEK_CUR);
+            if(tmpp!=' ' && tmpp!='\n' && tmpp!='\t'){
+                putc(' ', g);
+            }
+            putc('{', g);
+            putc('\n', g);
+            tabs++;
+            for(int i=0; i<tabs; i++){
+                fprintf(g, "    ");
+            }
+            if((tmpp=getc(f))!='\n' && tmpp!=EOF){
+                fseek(f, -1, SEEK_CUR);
+            }
+            wchar[0]=0; wchar[1]=0; wchar[2]=0; 
+        }
+        else if(tmp=='}'){
+            for(int i=0; i<wchar[0]; i++){
+                putc(' ', g);
+            }
+            for(int i=0; i<wchar[1]; i++){
+                fprintf(g, "    ");
+            }
+            for(int i=0; i<wchar[2]; i++){
+                putc('\n', g);
+                for(int i=0; i<tabs; i++){
+                   fprintf(g, "    ");
+                }
+            }
+            fseek(g, -1, SEEK_CUR);
+            char tmpp=getc(g);
+            fseek(g, 0, SEEK_CUR);
+            if(wchar[2]==0 && tmpp!='\n'){
+                putc('\n', g);
+            }
+            if(tabs>0){
+                tabs--;
+            }
+            for(int i=0; i<tabs; i++){
+                fprintf(g, "    ");
+            }
+            putc('}', g);
+            putc('\n', g);
+            if((tmpp=getc(f))!='\n' && tmpp!=EOF){
+                fseek(f, -1, SEEK_CUR);
+            }
+            wchar[0]=0; wchar[1]=0; wchar[2]=0; 
+
+        }
+        else{
+            for(long long i=0; i<wchar[0]; i++){
+                putc(' ', g);
+            }
+            for(long long i=0; i<wchar[1]; i++){
+                putc('\t', g);
+            }
+            for(long long i=0; i<wchar[2]; i++){
+                putc('\n', g);
+                for(int i=0; i<tabs; i++){
+                   putc('\t', g);
+                }
+            }
+            putc(tmp, g);
+            wchar[0]=0; wchar[1]=0; wchar[2]=0; 
+        }
+    }
+    
+    fclose(f); fclose(g);
+    FILE *h = fopen(name, "w");
+    FILE *j = fopen("backups/$func_indent.txt", "r");
+    while((tmp=getc(j))!=EOF){
+        putc(tmp, h);
+    }
+    fclose(h); fclose(j);
+    printf("operation done successfully.\n");
 }
 
 
